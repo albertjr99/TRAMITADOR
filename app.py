@@ -3,10 +3,7 @@ import threading
 import time
 import os
 import datetime
-import subprocess
 import re
-import glob
-import shutil
 import urllib.request
 import unicodedata
 from selenium import webdriver
@@ -14,10 +11,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
-import re
-import sys
 
 # ==============================
 # CONFIGURAÇÕES INICIAIS
@@ -130,191 +124,6 @@ def mostrar_aviso_e_encerrar(msg: str, segundos: int = 5):
 
     # Garante execução no loop principal do Tk
     root.after(0, _show)
-
-def obter_versao_chrome_windows():
-    """Retorna a versão do Google Chrome instalada no Windows (ex: '141.0.7390.123') ou None."""
-    try:
-        chaves = [
-            r"HKCU\Software\Google\Chrome\BLBeacon",
-            r"HKLM\Software\Google\Chrome\BLBeacon",
-            r"HKLM\Software\WOW6432Node\Google\Chrome\BLBeacon",
-        ]
-        for chave in chaves:
-            proc = subprocess.run(["reg", "query", chave, "/v", "version"], capture_output=True, text=True)
-            if proc.returncode == 0:
-                m = re.search(r"version\s+REG_SZ\s+([\d.]+)", proc.stdout, re.IGNORECASE)
-                if m:
-                    return m.group(1)
-    except Exception as e:
-        registrar_log(f"[Aviso] Falha ao obter versão do Chrome: {e}")
-    return None
-
-def obter_versao_chromedriver(caminho):
-    """Retorna a versão do chromedriver (ex: '141.0.7246.0') ou None."""
-    try:
-        proc = subprocess.run([caminho, "--version"], capture_output=True, text=True)
-        if proc.returncode == 0:
-            m = re.search(r"ChromeDriver\s+([\d.]+)", proc.stdout)
-            if m:
-                return m.group(1)
-    except Exception:
-        pass
-    return None
-
-def encontrar_chromedriver_compativel(major_chrome):
-    """Tenta localizar um chromedriver compatível com a versão major do Chrome.
-    Busca nesta ordem: variáveis de ambiente, arquivo no diretório atual, pasta 'drivers/', PATH do sistema.
-    Retorna caminho absoluto ou None.
-    """
-    candidatos = []
-
-    # Variáveis de ambiente comuns
-    for env_var in ["CHROMEDRIVER", "CHROMEDRIVER_PATH", "WEBDRIVER_CHROME_DRIVER"]:
-        caminho = os.getenv(env_var)
-        if caminho and os.path.exists(caminho):
-            candidatos.append(caminho)
-
-    # Arquivo na pasta atual
-    cwd_driver = os.path.join(os.getcwd(), "chromedriver.exe")
-    if os.path.exists(cwd_driver):
-        candidatos.append(cwd_driver)
-
-    # Drivers na subpasta 'drivers/'
-    for caminho in glob.glob(os.path.join(os.getcwd(), "drivers", "chromedriver*.exe")):
-        candidatos.append(caminho)
-
-    # Driver no PATH do sistema
-    path_driver = shutil.which("chromedriver")
-    if path_driver:
-        candidatos.append(path_driver)
-
-    # Cache do Selenium Manager (Windows): %LOCALAPPDATA%\selenium\chromedriver\win*/<versao>/chromedriver*.exe
-    try:
-        localapp = os.getenv("LOCALAPPDATA")
-        if localapp:
-            padrao = os.path.join(localapp, "selenium", "chromedriver", "**", "chromedriver*.exe")
-            for caminho in glob.glob(padrao, recursive=True):
-                candidatos.append(caminho)
-    except Exception:
-        pass
-
-    # Cache alternativo (caso exista): %USERPROFILE%\.cache\selenium\chromedriver\**\chromedriver*.exe
-    try:
-        userprofile = os.getenv("USERPROFILE")
-        if userprofile:
-            padrao2 = os.path.join(userprofile, ".cache", "selenium", "chromedriver", "**", "chromedriver*.exe")
-            for caminho in glob.glob(padrao2, recursive=True):
-                candidatos.append(caminho)
-    except Exception:
-        pass
-
-    for caminho in candidatos:
-        versao = obter_versao_chromedriver(caminho)
-        if versao:
-            try:
-                major_driver = int(versao.split(".")[0])
-                if major_chrome is None or major_driver == major_chrome:
-                    return caminho
-            except Exception:
-                continue
-    return None
-
-def _listar_candidatos_chromedriver() -> list:
-    """Retorna lista de possíveis caminhos de chromedriver (sem filtrar por versão)."""
-    candidatos = []
-    # PyInstaller (executável): verifica drivers empacotados em _MEIPASS e ao lado do executável
-    try:
-        base_meipass = getattr(sys, "_MEIPASS", None)
-        if base_meipass:
-            dir_drv = os.path.join(base_meipass, "drivers")
-            exe_drv = os.path.join(dir_drv, "chromedriver.exe")
-            if os.path.exists(exe_drv):
-                candidatos.append(exe_drv)
-            if os.path.isdir(dir_drv):
-                for nm in os.listdir(dir_drv):
-                    try:
-                        full = os.path.join(dir_drv, nm)
-                        if os.path.isfile(full) and full.lower().endswith(".exe") and "chromedriver" in nm.lower():
-                            candidatos.append(full)
-                    except Exception:
-                        pass
-        exe_dir = os.path.dirname(getattr(sys, "executable", sys.argv[0]))
-        dir_local = os.path.join(exe_dir, "drivers")
-        exe_local = os.path.join(dir_local, "chromedriver.exe")
-        if os.path.exists(exe_local):
-            candidatos.append(exe_local)
-        if os.path.isdir(dir_local):
-            for nm in os.listdir(dir_local):
-                try:
-                    full = os.path.join(dir_local, nm)
-                    if os.path.isfile(full) and full.lower().endswith(".exe") and "chromedriver" in nm.lower():
-                        candidatos.append(full)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-    try:
-        # Variáveis de ambiente comuns
-        for env_var in ["CHROMEDRIVER", "CHROMEDRIVER_PATH", "WEBDRIVER_CHROME_DRIVER"]:
-            caminho = os.getenv(env_var)
-            if caminho and os.path.exists(caminho):
-                candidatos.append(caminho)
-
-        # Arquivo na pasta atual
-        cwd_driver = os.path.join(os.getcwd(), "chromedriver.exe")
-        if os.path.exists(cwd_driver):
-            candidatos.append(cwd_driver)
-
-        # Drivers na subpasta 'drivers/'
-        for caminho in glob.glob(os.path.join(os.getcwd(), "drivers", "chromedriver*.exe")):
-            candidatos.append(caminho)
-
-        # Driver no PATH do sistema
-        path_driver = shutil.which("chromedriver")
-        if path_driver:
-            candidatos.append(path_driver)
-
-        # Cache do Selenium Manager
-        localapp = os.getenv("LOCALAPPDATA")
-        if localapp:
-            padrao = os.path.join(localapp, "selenium", "chromedriver", "**", "chromedriver*.exe")
-            candidatos.extend(glob.glob(padrao, recursive=True))
-
-        # Cache alternativo
-        userprofile = os.getenv("USERPROFILE")
-        if userprofile:
-            padrao2 = os.path.join(userprofile, ".cache", "selenium", "chromedriver", "**", "chromedriver*.exe")
-            candidatos.extend(glob.glob(padrao2, recursive=True))
-    except Exception:
-        pass
-    # Remove duplicados preservando ordem
-    vistos = set()
-    unicos = []
-    for c in candidatos:
-        if c and c not in vistos:
-            vistos.add(c)
-            unicos.append(c)
-    return unicos
-
-def encontrar_chromedriver_relaxado() -> str | None:
-    """Seleciona algum chromedriver disponível (o mais "novo" por versão), sem exigir match de major.
-    Útil para evitar depender do Selenium Manager quando offline/instável.
-    """
-    candidatos = _listar_candidatos_chromedriver()
-    if not candidatos:
-        return None
-    def versao_tuple(p):
-        v = obter_versao_chromedriver(p) or "0.0.0.0"
-        try:
-            parts = [int(x) for x in v.split('.')]
-        except Exception:
-            parts = [0,0,0,0]
-        return tuple(parts + [0]*(4-len(parts)))
-    try:
-        candidatos.sort(key=lambda p: versao_tuple(p), reverse=True)
-    except Exception:
-        pass
-    return candidatos[0]
 
 def porta_debug_aberta():
     """Verifica rapidamente se o Chrome está disponível em localhost:9222."""
@@ -1173,64 +982,13 @@ def automatizar(responsavel, cpf):
             )
             registrar_log(f"[Erro] {msg}")
             raise RuntimeError(msg)
-
-        # Detecta versão do Chrome e tenta encontrar um chromedriver compatível
-        versao_chrome = obter_versao_chrome_windows()
-        major_chrome = None
-        try:
-            if versao_chrome:
-                major_chrome = int(versao_chrome.split('.')[0])
-        except Exception:
-            major_chrome = None
-
-        registrar_log(f"Chrome detectado: {versao_chrome or 'desconhecido'} (major={major_chrome or 'n/a'})")
-        registrar_log("Procurando chromedriver compatível nas pastas locais...")
-
-        driver_path = encontrar_chromedriver_compativel(major_chrome)
-        if not driver_path:
-            # Fallback: tenta qualquer chromedriver já presente (pode ser de outra versão)
-            relax = encontrar_chromedriver_relaxado()
-            if relax:
-                registrar_log(f"[Fallback] Driver compatível não encontrado; tentando driver disponível: {relax}")
-                driver_path = relax
-
-        try:
-            if driver_path:
-                registrar_log(f"Usando chromedriver: {driver_path}")
-                service = Service(executable_path=driver_path)
-                t0 = time.time()
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-                registrar_log(f"ChromeDriver inicializado em {time.time()-t0:.2f}s (sem Selenium Manager)")
-            else:
-                registrar_log("Chromedriver compatível não encontrado localmente; tentando resolver via Selenium Manager (usará cache se disponível)...")
-                atualizar_status("⏳ Resolvendo driver (usa cache se já baixado)…")
-                t0 = time.time()
-                driver = webdriver.Chrome(options=chrome_options)
-                registrar_log(f"Selenium Manager resolveu em {time.time()-t0:.2f}s")
-                # Após resolver via Selenium Manager, tenta cachear uma cópia em drivers/ para reutilização nas próximas execuções
-                try:
-                    drv_service = getattr(driver, "service", None)
-                    drv_path = getattr(drv_service, "path", None)
-                    if drv_path and os.path.exists(drv_path):
-                        try:
-                            versao_drv = obter_versao_chromedriver(drv_path) or "desconhecida"
-                        except Exception:
-                            versao_drv = "desconhecida"
-                        dest_dir = os.path.join(os.getcwd(), "drivers")
-                        os.makedirs(dest_dir, exist_ok=True)
-                        nome = f"chromedriver_{versao_drv}.exe" if versao_drv != "desconhecida" else "chromedriver_cached.exe"
-                        dest = os.path.join(dest_dir, nome)
-                        if not os.path.exists(dest):
-                            shutil.copy2(drv_path, dest)
-                            registrar_log(f"Driver cacheado para reutilização: {dest}")
-                except Exception as e:
-                    registrar_log(f"[Aviso] Não foi possível cachear o driver resolvido: {e}")
-        except TypeError:
-            # Selenium < 4.6.0
-            if driver_path:
-                driver = webdriver.Chrome(executable_path=driver_path, options=chrome_options)
-            else:
-                driver = webdriver.Chrome(options=chrome_options)
+            
+        registrar_log("Conectando ao Chrome via Selenium Manager...")
+        atualizar_status("⏳ Conectando via Selenium Manager…")
+        t0 = time.time()
+        driver = webdriver.Chrome(options=chrome_options)
+        registrar_log(f"Chrome conectado em {time.time()-t0:.2f}s")
+        
 
         driver.implicitly_wait(2)
         wait = WebDriverWait(driver, 5, poll_frequency=0.3)
@@ -1768,5 +1526,6 @@ footer_label = ctk.CTkLabel(
     text_color=("#9575CD", "#B39DDB")
 )
 footer_label.pack(pady=(0, 15))
+
 
 root.mainloop()
